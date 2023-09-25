@@ -1,0 +1,93 @@
+trigger:
+  - none
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  solution: "**/*.sln"
+  exampleProject: "**/ExampleWebApi.csproj"  
+  buildPlatform: "Any CPU"
+  buildConfiguration: "Release"
+  dockerBuildPath: "./docker/docker-build"
+  dockerFile: "./docker/cloud.Dockerfile"
+  containerRegistry: "mycontainerregistry"
+  myAcrContainerRegistry: "my-docker-registry"
+  azureSubscription: "MY-AZ-Subscription"
+  azureServiceConnection: 'MY-AZ-ServiceConnection'
+  dockerNamespace: "mycontainerregistry.azurecr.io"
+  dockerRepository: "examplewebapi"
+  appName1: "my-webapp-01"
+  appName2: "my-webappcontainer-01"
+  imageRepository: "examplewebapi"
+  tag: '$(Build.BuildId)'
+
+jobs:
+ - job: exampleapi
+   displayName: build example web api (docker)
+   condition: true
+   steps:
+      - task: UseDotNet@2
+        displayName: "install dotnet 7.0"
+        enabled: true
+        inputs:
+          packageType: sdk
+          version: 7.x
+
+      - task: DotNetCoreCLI@2
+        displayName: "dotnet restore ExampleWebApi"
+        enabled: true
+        inputs:
+          command: "restore"
+          projects: "**/*.csproj"
+          feedsToUse: "select"
+          vstsFeed: "704a0702-c4c9-4fa9-bfb4-0d5dae91f866"
+          arguments: "-c $(buildConfiguration)"
+
+      - task: DotNetCoreCLI@2
+        displayName: "dotnet build $(exampleProject)"
+        enabled: true
+        inputs:
+          command: "build"
+          projects: "$(exampleProject)"
+          feedsToUse: "select"
+          vstsFeed: "704a0702-c4c9-4fa9-bfb4-0d5dae91f866"
+          arguments: "-c $(buildConfiguration) -o $(dockerBuildPath)"
+
+      - task: DotNetCoreCLI@2
+        displayName: "dotnet test"
+        enabled: true
+        inputs:
+          command: "test"
+          projects: "$(solution)"
+          publishTestResults: true
+          feedsToUse: "select"
+          vstsFeed: "704a0702-c4c9-4fa9-bfb4-0d5dae91f866"
+          arguments: '-c $(buildConfiguration) --collect "Code coverage" '
+
+      - task: Docker@2
+        displayName: "docker build and push $(dockerFile)"
+        enabled: true
+        inputs:
+          command: buildAndPush
+          Dockerfile: $(dockerFile)
+          containerRegistry: $(myAcrContainerRegistry)
+          buildContext: docker/docker-build
+          repository: $(imageRepository)
+          tags: |
+            $(tag)
+      - task: AzureRmWebAppDeployment@4
+        inputs:
+          ConnectionType: 'AzureRM'
+          azureSubscription: $(azureSubscription)
+          appType: 'webAppContainer'
+          WebAppName: $(appName1)
+          DockerNamespace: $(dockerNamespace)
+          DockerRepository: $(dockerRepository)
+          DockerImageTag: $(tag)
+
+      - task: AzureWebAppContainer@1
+        inputs:
+          azureSubscription: '$(azureServiceConnection)'
+          appName: $(appName2)
+          containers: $(dockerNamespace)/$(dockerRepository):$(tag)

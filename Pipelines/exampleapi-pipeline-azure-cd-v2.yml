@@ -1,0 +1,54 @@
+trigger:
+  - none
+
+pool:
+  vmImage: "ubuntu-latest"
+
+variables:
+  solution: "**/*.sln"
+  projectFile: "**/ExampleWebApi.csproj"
+  buildPlatform: "Any CPU"
+  buildConfiguration: "Release"
+  dockerBuildPath: "./docker/docker-build"
+  dockerFile: "./ExampleWebApi/cloudv2.dockerfile"
+  myAcrContainerRegistry: "my-docker-registry"
+  azureSubscription: "MY-AZ-Subscription"
+  azureServiceConnection: 'MY-AZ-ServiceConnection'
+  dockerNamespace: "mycontainerregistry.azurecr.io"
+  dockerRepository: "examplewebapi"
+  appName1: "my-webapp-01"
+  appName2: "my-webappcontainer-01"
+  imageRepository: "examplewebapi"
+  tag: '$(Build.BuildId)'
+
+jobs:
+ - job: buildAndDeploy
+   displayName: build ExampleWebApi (docker)
+   condition: true
+   steps:
+      - task: Docker@2
+        displayName: "docker build and push $(dockerFile)"
+        enabled: true
+        inputs:
+          command: buildAndPush
+          Dockerfile: $(dockerFile)
+          containerRegistry: $(myAcrContainerRegistry)
+          buildContext: ExampleWebApi
+          repository: $(dockerRepository)
+          tags: |
+            $(tag)
+      - task: AzureRmWebAppDeployment@4
+        inputs:
+          ConnectionType: 'AzureRM'
+          azureSubscription: $(azureSubscription)
+          appType: 'webAppContainer'
+          WebAppName: $(appName1)
+          DockerNamespace: $(dockerNamespace)
+          DockerRepository: $(dockerRepository)
+          DockerImageTag: $(tag)
+
+      - task: AzureWebAppContainer@1
+        inputs:
+          azureSubscription: '$(azureServiceConnection)'
+          appName: $(appName2)
+          containers: $(dockerNamespace)/$(dockerRepository):$(tag)
